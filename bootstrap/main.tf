@@ -2,8 +2,10 @@ provider "aws" {
   region = var.aws_region
 }
 
-resource "aws_iam_role" "ec2_read_s3" {
-  name = "ec2_read_s3"
+data "aws_caller_identity" "current" {}
+
+resource "aws_iam_role" "ec2_read" {
+  name = "ec2_read"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -41,13 +43,50 @@ resource "aws_iam_policy" "ec2_read_s3" {
 }
 
 resource "aws_iam_role_policy_attachment" "attach" {
-  role       = aws_iam_role.ec2_read_s3.name
+  role       = aws_iam_role.ec2_read.name
   policy_arn = aws_iam_policy.ec2_read_s3.arn
+}
+
+/* resource "aws_iam_policy" "ec2_read_ecr" {
+  name = "ec2_read_ecr_policy"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        "Effect" : "Allow",
+        "Action" : "ecr:GetAuthorizationToken",
+        "Resource" : "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage"
+        ]
+        Resource = [
+          "arn:aws:ecr:us-east-1:${data.aws_caller_identity.current.account_id}:repository/users-service",
+          "arn:aws:ecr:us-east-1:${data.aws_caller_identity.current.account_id}:repository/users-service/*"
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "attach_ecr_ec2" {
+  role       = aws_iam_role.ec2_read.name
+  policy_arn = aws_iam_policy.ec2_read_ecr.arn
+} */
+
+resource "aws_iam_role_policy_attachment" "ecr" {
+  role       = aws_iam_role.ec2_read.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
 resource "aws_iam_instance_profile" "this" {
   name = "ec2_read_s3_profile"
-  role = aws_iam_role.ec2_read_s3.name
+  role = aws_iam_role.ec2_read.name
 }
 
 module "s3_logs" {
@@ -67,13 +106,13 @@ module "s3_logs" {
 }
 
 resource "aws_ecr_repository" "ecr_users_repo" {
-  name = "users-service"
+  name                 = "users-service"
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
     scan_on_push = true
   }
-  
+
 }
 
 resource "aws_ecr_lifecycle_policy" "ecr_users_repo_policy" {
@@ -84,13 +123,13 @@ resource "aws_ecr_lifecycle_policy" "ecr_users_repo_policy" {
       {
         rulePriority = 1
         description  = "Expire untagged images after 1 hour"
-        selection    = {
+        selection = {
           tagStatus   = "untagged"
           countType   = "sinceImagePushed"
-          countUnit   = "hours"
+          countUnit   = "days"
           countNumber = 1
         }
-        action       = {
+        action = {
           type = "expire"
         }
       }

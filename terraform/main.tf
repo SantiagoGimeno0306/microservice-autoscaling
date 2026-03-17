@@ -7,6 +7,8 @@ provider "aws" {
   }
 }
 
+data "aws_caller_identity" "current" {}
+
 module "vpc" {
   source = "terraform-aws-modules/vpc/aws"
 
@@ -68,7 +70,7 @@ resource "aws_vpc_security_group_ingress_rule" "ingress_rds" {
   referenced_security_group_id = aws_security_group.ec2.id
 }
 
-data "aws_ami" "ubuntu" {
+/* data "aws_ami" "ubuntu" {
   most_recent = true
 
   filter {
@@ -77,7 +79,23 @@ data "aws_ami" "ubuntu" {
   }
 
   owners = ["self", "099720109477"]
-  
+}
+ */
+
+data "aws_ami" "ubuntu" {
+  most_recent = true
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+
+  owners = ["099720109477"] # Canonical
 }
 
 data "aws_iam_instance_profile" "this" {
@@ -105,7 +123,7 @@ resource "aws_db_instance" "default" {
   skip_final_snapshot  = true
   vpc_security_group_ids = [aws_security_group.rds.id]
   db_subnet_group_name   = aws_db_subnet_group.rds.name
-  
+  publicly_accessible = false
 }
 
 data "aws_rds_engine_version" "test" {
@@ -122,6 +140,7 @@ resource "aws_launch_template" "ec2_lt" {
       db_name = aws_db_instance.default.db_name
       db_user = aws_db_instance.default.username
       db_pass = aws_db_instance.default.password
+      account_id = data.aws_caller_identity.current.account_id
   }))
 
   iam_instance_profile {
@@ -227,7 +246,7 @@ resource "aws_lb_target_group" "terramino" {
 
 resource "aws_autoscaling_group" "terramino" {
 min_size             = 1
-max_size             = 3
+max_size             = 1
 desired_capacity     = 1
 launch_template {
     id      = aws_launch_template.ec2_lt.id
@@ -242,7 +261,9 @@ health_check_grace_period = 60
 resource "aws_autoscaling_policy" "scale_up" {
   name                   = "scale-up"
   autoscaling_group_name = aws_autoscaling_group.terramino.name
-  adjustment_type        = "StepScaling"
+  adjustment_type        = "ChangeInCapacity"
+  policy_type = "TargetTrackingScaling"
+  estimated_instance_warmup = 30
   target_tracking_configuration {
     target_value = 2
     predefined_metric_specification {

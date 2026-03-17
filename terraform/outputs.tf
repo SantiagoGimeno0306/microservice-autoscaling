@@ -24,5 +24,5 @@ output "alb_health_check" {
 
 output "db_instance_endpoint" {
   description = "The endpoint of the RDS instance"
-  value       = aws_db_instance.default.endpoint
+  value       = aws_db_instance.default.address
 }

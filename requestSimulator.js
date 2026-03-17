@@ -1,4 +1,4 @@
-const TARGET_URL = 'http://learn-asg-terramino-lb-1691914158.us-east-1.elb.amazonaws.com:8021/users';
+const TARGET_URL = 'http://learn-asg-terramino-lb-463002698.us-east-1.elb.amazonaws.com:8021/users';
 /* const TARGET_URL = 'http://localhost:8021/users'; */
 
 function simulateRequest() {
