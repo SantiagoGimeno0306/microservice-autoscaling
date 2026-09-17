@@ -118,7 +118,7 @@ resource "aws_db_instance" "default" {
   engine_version       = data.aws_rds_engine_version.test.version
   instance_class       = "db.t3.micro"
   username             = "postgres"
-  password             = "arcoiris8"
+  password             = "xxxxxxx"
   /* parameter_group_name = "default.postgre17.6" */
   skip_final_snapshot  = true
   vpc_security_group_ids = [aws_security_group.rds.id]
@@ -276,5 +276,15 @@ data "aws_instances" "asg_instances" {
   filter {
     name   = "tag:aws:autoscaling:groupName"
     values = [aws_autoscaling_group.terramino.name]
+  }
+}
+
+
+resource "aws_ecs_cluster" "foo" {
+  name = "white-hart"
+
+  setting {
+    name  = "containerInsights"
+    value = "enabled"
   }
 }

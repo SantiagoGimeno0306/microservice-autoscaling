@@ -1,25 +1,12 @@
 - Refactorizar terraform para tenerlo ordenado en modulos
-- Usar AWS Identity Cetner para conectar con terraform
-- Revisar otras formas de conectar a las ec2 que no sean poner el nombre de las access_keys en terraform
-- Leer el jar de algun sitio mejor que un S3 si lo hay
-- Subir el jar a s3 por consola
-- Implemetnar CI/CD para terraform
-- Implementar CI/CD para el jar
-- Separar terraform en bootstrap y runtime, para tener infraestructura que siempre esté creada
+- Usar AWS Identity Center para conectar con terraform
+- Implementar CI/CD para terraform
 - Unificar las variables.tf en un solo archivo
 - Usar state lock para terraform state
 - Sacar credenciales a Secret Manager
-- rolling deployments en ASG
+- Rolling deployments en ASG
 
 Hecho:
 - Conectar el jar a una bbdd
-
-
-
-docker run -d \
-  --restart always \
-  -p 8021:8021 \
-  -e DB_URL="jdbc:postgresql://terraform-20260308180229837700000004.ciduiaemcntw.us-east-1.rds.amazonaws.com:5432:5432/postgres" \
-  -e DB_USER="postgres" \
-  -e DB_PASSWORD="arcoiris8" \
-  316444450651.dkr.ecr.us-east-1.amazonaws.com/users-service:latest
+- Separar terraform en bootstrap y runtime, para tener infraestructura que siempre esté creada
+- Implementar CI/CD para el jar
