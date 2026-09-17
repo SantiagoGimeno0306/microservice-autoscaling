@@ -1,150 +1,153 @@
-AWS Microservice Infrastructure with Terraform — V2
+# AWS Microservice Infrastructure with Terraform — V2
 
-Despliegue de un microservicio Spring Boot sobre AWS, completamente definido mediante Terraform, con autoescalado, base de datos RDS, Docker y un pipeline de CI/CD basado en GitHub Actions.
+Despliegue de un microservicio **Spring Boot sobre AWS**, completamente definido mediante **Terraform**, con Docker, Amazon ECR, GitHub Actions, Auto Scaling, Application Load Balancer y una base de datos PostgreSQL en RDS.
 
-Este proyecto nació como un reto personal para llevar a la práctica conocimientos de AWS más allá de la teoría. La primera versión estaba centrada principalmente en la construcción de la infraestructura; en esta V2 se incorpora Docker y automatización del proceso de build y publicación de la aplicación.
+Este proyecto nació como un reto personal para llevar a la práctica conocimientos de AWS más allá de la teoría. La **V1** se centraba principalmente en la construcción de la infraestructura; en esta **V2** se incorpora Docker y se automatiza el proceso de build y publicación de la aplicación.
 
-El objetivo final es cubrir el ciclo completo:
+El objetivo es cubrir el ciclo completo:
 
-Commit → GitHub Actions → Docker build → Amazon ECR → EC2/Auto Scaling → aplicación desplegada
+> **Commit → CI/CD → Docker Build → Amazon ECR → EC2/Auto Scaling → Spring Boot → RDS**
 
-🚀 Arquitectura
+---
 
-La infraestructura utiliza los siguientes servicios de AWS:
+## 📐 Arquitectura
 
-VPC para aislar la infraestructura de red.
-Subnets públicas y privadas distribuidas entre Availability Zones.
-Application Load Balancer (ALB) para recibir y distribuir el tráfico.
-EC2 + Auto Scaling Group para ejecutar el microservicio.
-Launch Template para definir la configuración de las instancias.
-Amazon RDS PostgreSQL como base de datos.
-Amazon ECR como registry de imágenes Docker.
-IAM Instance Profile para proporcionar permisos a las instancias EC2.
-GitHub Actions para automatizar CI/CD.
-Terraform para definir toda la infraestructura como código.
-Docker para empaquetar y ejecutar la aplicación.
-Diagrama lógico
-                         ┌────────────────────┐
-                         │     Developer      │
-                         └─────────┬──────────┘
-                                   │
-                                git push
-                                   │
-                                   ▼
-                         ┌────────────────────┐
-                         │   GitHub Actions   │
-                         │                    │
-                         │  Build + Test      │
-                         │  Docker Build      │
-                         │  Push to ECR       │
-                         └─────────┬──────────┘
-                                   │
-                                   ▼
-                         ┌────────────────────┐
-                         │   Amazon ECR       │
-                         │                    │
-                         │  Docker Image      │
-                         └─────────┬──────────┘
-                                   │
-                             docker pull
-                                   │
-                                   ▼
-        ┌─────────────────────────────────────────────────────┐
-        │                         AWS VPC                     │
-        │                                                     │
-        │  ┌───────────────────────────────────────────────┐  │
-        │  │              Public Subnets                   │  │
-        │  │                                               │  │
-        │  │       ┌─────────────────────────┐             │  │
-        │  │       │ Application Load        │             │  │
-        │  │       │ Balancer               │             │  │
-        │  │       └────────────┬────────────┘             │  │
-        │  │                    │                          │  │
-        │  │                    ▼                          │  │
-        │  │       ┌─────────────────────────┐             │  │
-        │  │       │ Auto Scaling Group      │             │  │
-        │  │       │                         │             │  │
-        │  │       │  ┌───────┐  ┌───────┐ │             │  │
-        │  │       │  │ EC2   │  │ EC2   │ │             │  │
-        │  │       │  │Docker │  │Docker │ │             │  │
-        │  │       │  └───────┘  └───────┘ │             │  │
-        │  │       └────────────┬────────────┘             │  │
-        │  └────────────────────┼──────────────────────────┘  │
-        │                       │                             │
-        │                       │ PostgreSQL                  │
-        │                       ▼                             │
-        │  ┌───────────────────────────────────────────────┐  │
-        │  │               Private Subnets                 │  │
-        │  │                                               │  │
-        │  │             ┌─────────────────┐               │  │
-        │  │             │   RDS PostgreSQL │               │  │
-        │  │             └─────────────────┘               │  │
-        │  └───────────────────────────────────────────────┘  │
-        │                                                     │
-        └─────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    DEV["👨‍💻 Developer"] -->|git push| GH["GitHub Actions"]
 
-Nota: actualmente el Auto Scaling Group está configurado con min_size = 1, desired_capacity = 1 y max_size = 1. La política de Target Tracking queda preparada para el autoescalado, pero para que pueda aumentar el número de instancias será necesario incrementar max_size.
+    subgraph CI["CI/CD"]
+        GH --> TEST["Build & Test"]
+        TEST --> BUILD["Docker Build"]
+        BUILD --> PUSH["Push image"]
+    end
 
-📦 V2 — ¿Qué ha cambiado?
+    PUSH --> ECR["Amazon ECR"]
 
-La V1 se centraba en desplegar la aplicación directamente sobre EC2 y gestionar la infraestructura mediante Terraform.
+    subgraph AWS["AWS"]
+        subgraph VPC["VPC · 10.0.0.0/16"]
+            ALB["Application Load Balancer<br/>Public Subnets"]
 
-En esta segunda versión se ha evolucionado el proceso de despliegue:
+            subgraph ASG["Auto Scaling Group"]
+                EC2A["EC2 Instance<br/>Docker + Spring Boot"]
+                EC2B["EC2 Instance<br/>Docker + Spring Boot"]
+            end
 
-V1
-Terraform
-   │
-   ├── VPC
-   ├── EC2
-   ├── RDS
-   ├── Auto Scaling
-   └── Application
-         │
-         └── Instalación/configuración en EC2
-V2
-GitHub
-   │
-   │ commit
-   ▼
+            RDS["RDS PostgreSQL<br/>Private Subnets"]
+        end
+    end
+
+    ECR -->|docker pull| EC2A
+    ECR -->|docker pull| EC2B
+
+    ALB -->|HTTP :8021| EC2A
+    ALB -->|HTTP :8021| EC2B
+
+    EC2A -->|PostgreSQL :5432| RDS
+    EC2B -->|PostgreSQL :5432| RDS
+```
+
+### Flujo de despliegue
+
+```mermaid
+sequenceDiagram
+    participant D as Developer
+    participant G as GitHub Actions
+    participant E as Amazon ECR
+    participant T as Terraform / AWS
+    participant C as EC2 Container
+    participant R as RDS PostgreSQL
+
+    D->>G: Push commit
+    G->>G: Build & test
+    G->>G: Docker build
+    G->>E: Push image
+    T->>C: Launch / configure instance
+    C->>E: docker pull
+    E-->>C: Docker image
+    C->>C: Start Spring Boot
+    C->>R: Connect :5432
+    C-->>T: /actuator/health = 200
+```
+
+> **Nota:** el Auto Scaling Group está actualmente configurado con `min_size = 1`, `desired_capacity = 1` y `max_size = 1`. La política de Target Tracking está definida, pero con `max_size = 1` no puede aumentar el número de instancias. Para habilitar el escalado horizontal hay que incrementar `max_size`.
+
+---
+
+# 🚀 V2 — Evolución respecto a la V1
+
+La V1 estaba enfocada en desplegar y entender los diferentes componentes de AWS:
+
+- VPC
+- EC2
+- RDS
+- Security Groups
+- IAM
+- Auto Scaling
+- Load Balancing
+- Terraform
+
+La V2 añade una capa de automatización y containerización:
+
+- 🐳 Dockerización de la aplicación
+- 🔄 Pipeline de CI/CD con GitHub Actions
+- 📦 Publicación automática de imágenes en Amazon ECR
+- 🚀 Configuración del Launch Template para hacer pull de la imagen
+- 🔐 Paso de configuración desde Terraform al `user_data`
+- ♻️ Separación entre el proceso de **build** y el de **ejecución**
+
+### Antes
+
+```text
+Código
+  │
+  ▼
+AMI personalizada
+  │
+  ▼
+EC2
+  │
+  ▼
+Aplicación
+```
+
+Cada nueva versión de la aplicación podía implicar volver a preparar una imagen de máquina.
+
+### Ahora
+
+```text
+Código
+  │
+  ▼
 GitHub Actions
-   │
-   ├── Test
-   ├── Docker Build
-   └── Push
-         │
-         ▼
-       ECR
-         │
-         │ docker pull
-         ▼
-   EC2 / Auto Scaling
-         │
-         ▼
-   Docker Container
-         │
-         ▼
-   Spring Boot
-         │
-         ▼
-   RDS PostgreSQL
+  │
+  ├── Build
+  ├── Test
+  └── Docker Build
+          │
+          ▼
+      Amazon ECR
+          │
+          ▼
+      EC2 / ASG
+          │
+          └── docker pull
+                  │
+                  ▼
+           Spring Boot
+```
 
-El cambio principal consiste en separar claramente:
+La aplicación queda desacoplada de la AMI. La máquina proporciona el entorno de ejecución y el contenedor contiene la aplicación.
 
-Build de la aplicación
-Distribución del artefacto
-Infraestructura
-Ejecución de la aplicación
+---
 
-Esto evita tener que generar una nueva AMI cada vez que cambia la aplicación.
-
-🐳 Docker
+# 🐳 Docker
 
 La aplicación Spring Boot se empaqueta como una imagen Docker.
 
-Esto permite que la misma imagen que se construye durante el pipeline sea posteriormente utilizada por las instancias EC2.
+La misma imagen generada por el pipeline es la que posteriormente se descarga desde ECR y se ejecuta en las instancias EC2.
 
-El flujo es:
-
+```text
 Spring Boot
      │
      ▼
@@ -156,213 +159,309 @@ Docker Image
      ▼
 Amazon ECR
      │
+     │ docker pull
      ▼
 EC2
      │
-     └── docker pull
-             │
-             ▼
-        Docker Container
+     ▼
+Docker Container
+     │
+     ▼
+Spring Boot
+```
 
-De esta manera, la AMI utilizada por EC2 únicamente necesita contener el sistema operativo y las herramientas necesarias para ejecutar el contenedor.
+Esto permite separar claramente:
 
-La aplicación deja de estar acoplada a la imagen de la máquina.
+| Responsabilidad | Componente |
+|---|---|
+| Código fuente | GitHub |
+| Build y tests | GitHub Actions |
+| Empaquetado | Docker |
+| Registry | Amazon ECR |
+| Infraestructura | Terraform |
+| Ejecución | EC2 + Docker |
+| Base de datos | Amazon RDS |
 
-🔄 CI/CD con GitHub Actions
+---
 
-El pipeline automatiza la construcción y publicación de la aplicación.
+# 🔄 CI/CD
 
-De forma conceptual:
+GitHub Actions automatiza la construcción y publicación de la imagen Docker.
 
-                    git push
+El flujo conceptual es:
+
+```mermaid
+flowchart LR
+    A["Commit"] --> B["GitHub Actions"]
+    B --> C["Build"]
+    C --> D["Tests"]
+    D --> E["Docker Build"]
+    E --> F["Amazon ECR"]
+```
+
+El objetivo es que un cambio en el código pueda convertirse automáticamente en una nueva imagen disponible en AWS, eliminando pasos manuales del proceso de build y publicación.
+
+---
+
+# 🏗️ Infraestructura como código
+
+Toda la infraestructura principal está definida mediante **Terraform**.
+
+## Recursos principales
+
+### Networking
+
+- VPC
+- Public Subnets
+- Private Subnets
+- Availability Zones
+- Security Groups
+
+### Compute
+
+- EC2 Launch Template
+- Auto Scaling Group
+- Auto Scaling Policy
+- IAM Instance Profile
+
+### Load Balancing
+
+- Application Load Balancer
+- Listener
+- Target Group
+- Health Checks
+
+### Database
+
+- RDS PostgreSQL
+- RDS Subnet Group
+
+### Container Registry
+
+- Amazon ECR
+
+---
+
+# 🌐 Networking
+
+La VPC utiliza:
+
+```text
+10.0.0.0/16
+```
+
+Subnets públicas:
+
+```text
+10.0.101.0/24
+10.0.102.0/24
+```
+
+Subnets privadas:
+
+```text
+10.0.1.0/24
+10.0.2.0/24
+```
+
+La idea es separar los componentes según su exposición:
+
+```text
+                    Internet
                        │
                        ▼
               ┌─────────────────┐
-              │ GitHub Actions   │
+              │       ALB       │
+              │ Public Subnets  │
               └────────┬────────┘
                        │
-                 Build / Test
-                       │
                        ▼
-                Docker Build
+              ┌─────────────────┐
+              │       EC2       │
+              │      Docker     │
+              └────────┬────────┘
                        │
+                       │ :5432
                        ▼
-                 Docker Image
-                       │
-                       ▼
-                 Amazon ECR
+              ┌─────────────────┐
+              │       RDS       │
+              │ Private Subnets │
+              └─────────────────┘
+```
 
-El objetivo es que un cambio en el código pueda convertirse automáticamente en una nueva imagen disponible para el entorno AWS.
+RDS está configurado como no públicamente accesible:
 
-Esto elimina pasos manuales del proceso de despliegue y hace que el pipeline sea reproducible.
-
-🏗️ Terraform
-
-Toda la infraestructura se define como código utilizando Terraform.
-
-Entre los principales recursos definidos se encuentran:
-
-Networking
-VPC
-Public Subnets
-Private Subnets
-Availability Zones
-Security Groups
-Compute
-EC2 Launch Template
-Auto Scaling Group
-Auto Scaling Policy
-IAM Instance Profile
-Load Balancing
-Application Load Balancer
-Listener
-Target Group
-Health Checks
-Database
-RDS PostgreSQL
-RDS Subnet Group
-Container Registry
-Amazon ECR (utilizado por el pipeline para almacenar las imágenes)
-🌐 Networking
-
-La VPC utiliza el rango:
-
-10.0.0.0/16
-
-Se han definido subnets públicas y privadas:
-
-Public:
-10.0.101.0/24
-10.0.102.0/24
-
-Private:
-10.0.1.0/24
-10.0.2.0/24
-
-El diseño separa los componentes que necesitan exposición pública de aquellos que no deberían estar directamente accesibles desde Internet.
-
-La base de datos RDS se encuentra en las subnets privadas y no es públicamente accesible:
-
+```hcl
 publicly_accessible = false
-🔐 Security Groups
+```
 
-Se utilizan diferentes Security Groups para controlar la comunicación entre componentes.
+---
 
-EC2
+# 🔐 Security Groups
 
-Permite:
+Se utilizan Security Groups independientes para controlar el tráfico entre los diferentes componentes.
 
-SSH (22)
-HTTP de la aplicación (8021)
-Tráfico de salida
-ALB
+## EC2
 
-Permite recibir tráfico en:
+Actualmente permite:
 
+- SSH `22`
+- Aplicación `8021`
+- Tráfico de salida
+
+## Application Load Balancer
+
+Permite recibir tráfico HTTP en:
+
+```text
 8021
+```
 
 y reenviarlo hacia las instancias EC2.
 
-RDS
+## RDS
 
 PostgreSQL escucha en:
 
+```text
 5432
+```
 
-pero el acceso está restringido al Security Group de EC2:
+pero el Security Group de RDS únicamente permite tráfico procedente del Security Group de EC2:
 
+```hcl
 referenced_security_group_id = aws_security_group.ec2.id
+```
 
-Por tanto, conceptualmente:
+Por tanto, el acceso a la base de datos sigue el siguiente flujo:
 
-Internet
-   │
-   ▼
-  ALB
-   │
-   ▼
- EC2
-   │
-   ▼
- RDS
+```text
+ALB
+ │
+ ▼
+EC2
+ │
+ ▼
+RDS
+```
 
-La base de datos no necesita aceptar conexiones directamente desde Internet.
+La base de datos no está expuesta directamente a Internet.
 
-❤️ Health Checks
+---
 
-El Application Load Balancer utiliza el endpoint:
+# ❤️ Health Checks
 
-/actuator/health
+El Application Load Balancer utiliza Spring Boot Actuator para comprobar la salud de las instancias:
 
-para comprobar el estado de la aplicación.
+```text
+GET /actuator/health
+```
 
+Configuración:
+
+```hcl
 health_check {
-  path    = "/actuator/health"
-  matcher = "200"
-  port    = 8021
+  path                = "/actuator/health"
+  matcher             = "200"
+  unhealthy_threshold = 5
+  timeout             = 10
+  port                = 8021
 }
+```
 
-Esto permite que el ALB determine si una instancia está preparada para recibir tráfico.
+Esto permite al ALB detectar si una instancia está preparada para recibir tráfico.
 
-📈 Auto Scaling
+---
+
+# 📈 Auto Scaling
 
 Las instancias se gestionan mediante un Auto Scaling Group.
 
-Actualmente:
+Configuración actual:
 
+```hcl
 min_size         = 1
 desired_capacity = 1
 max_size         = 1
+```
 
 La política utiliza:
 
+```text
 ASGAverageCPUUtilization
+```
 
-con un objetivo del:
+con un target de:
 
+```text
 2%
+```
 
-La infraestructura está preparada para modificar max_size y permitir que el ASG cree nuevas instancias según la métrica configurada.
+La configuración está preparada para evolucionar hacia un escenario con varias instancias aumentando `max_size`.
 
-🗄️ RDS PostgreSQL
+Por ejemplo:
+
+```text
+                 Application Load Balancer
+                           │
+                 ┌─────────┴─────────┐
+                 ▼                   ▼
+              EC2 #1              EC2 #2
+                 │                   │
+                 └─────────┬─────────┘
+                           ▼
+                       RDS PostgreSQL
+```
+
+---
+
+# 🗄️ RDS PostgreSQL
 
 La aplicación utiliza PostgreSQL gestionado mediante Amazon RDS.
 
 Configuración actual:
 
-Engine: PostgreSQL
-Instance: db.t3.micro
-Storage: 10 GB
-Port: 5432
-Public access: Disabled
+| Parámetro | Valor |
+|---|---|
+| Engine | PostgreSQL |
+| Instance | `db.t3.micro` |
+| Storage | 10 GB |
+| Port | `5432` |
+| Public access | Disabled |
+| Preferred version | `17.6` |
 
-Terraform obtiene la versión preferida mediante:
+La versión de PostgreSQL se obtiene mediante Terraform:
 
+```hcl
 data "aws_rds_engine_version" "test" {
   engine             = "postgres"
   preferred_versions = ["17.6"]
 }
+```
 
-La instancia RDS se encuentra asociada a un DB Subnet Group compuesto por las subnets privadas.
+RDS está asociado a un DB Subnet Group compuesto por las subnets privadas.
 
-⚙️ Configuración mediante user_data
+---
 
-Una de las partes importantes de la V2 es la utilización del user_data del Launch Template.
+# ⚙️ Configuración mediante `user_data`
+
+Una de las piezas importantes de la V2 es la utilización del `user_data` del Launch Template.
 
 Terraform genera dinámicamente el script de inicialización:
 
+```hcl
 user_data = base64encode(templatefile("init_script.sh", {
-  db_host   = aws_db_instance.default.address
-  db_name   = aws_db_instance.default.db_name
-  db_user   = aws_db_instance.default.username
-  db_pass   = aws_db_instance.default.password
+  db_host    = aws_db_instance.default.address
+  db_name    = aws_db_instance.default.db_name
+  db_user    = aws_db_instance.default.username
+  db_pass    = aws_db_instance.default.password
   account_id = data.aws_caller_identity.current.account_id
 }))
-
-Esto permite proporcionar a la instancia información necesaria para arrancar el contenedor.
+```
 
 El flujo es:
 
+```text
 Terraform
    │
    ▼
@@ -378,39 +477,54 @@ EC2 initialization
 Docker
    │
    ▼
-Spring Boot Container
-🔑 IAM y Amazon ECR
+Spring Boot
+```
 
-Las instancias EC2 utilizan un IAM Instance Profile.
+Esto permite configurar el contenedor cuando se inicializa una nueva instancia.
 
-El objetivo es permitir que la instancia pueda interactuar con los servicios AWS necesarios sin tener que almacenar credenciales estáticas dentro de la máquina.
+---
 
-En particular, la instancia necesita permisos para autenticarse contra ECR y realizar el pull de la imagen.
+# 🔑 IAM y ECR
 
-🧠 Principales aprendizajes
+Las instancias EC2 utilizan un **IAM Instance Profile**.
 
-Este proyecto empezó como un ejercicio para aplicar conceptos de AWS y terminó siendo especialmente útil por los problemas que aparecieron durante la implementación.
+El objetivo es proporcionar a las instancias los permisos necesarios para interactuar con AWS sin almacenar credenciales estáticas dentro de la máquina.
 
-Algunos de los aprendizajes más importantes fueron:
+En la V2, esto es especialmente importante para que EC2 pueda autenticarse contra ECR y realizar:
 
-1. La teoría no siempre refleja el comportamiento real
+```bash
+docker pull
+```
 
-Durante la V1, la aplicación se reiniciaba constantemente en EC2 y los logs de la aplicación no mostraban un error evidente.
+de la imagen de la aplicación.
 
-El problema estaba relacionado con la memoria disponible en una instancia t2.micro.
+---
 
-El sistema operativo terminaba el proceso antes de que la aplicación pudiera arrancar correctamente.
+# 🧠 Aprendizajes
 
-Esto fue especialmente interesante porque el problema no estaba realmente en Spring Boot, sino en los recursos disponibles en la infraestructura.
+Este proyecto comenzó como un ejercicio para aplicar conceptos de AWS y terminó siendo especialmente útil por los problemas encontrados durante la implementación.
 
-2. El ciclo de vida de una aplicación es importante
+## 1. Los recursos de una instancia importan
+
+Durante la V1, la aplicación se reiniciaba constantemente en EC2 sin mostrar un error evidente en los logs de Spring Boot.
+
+El problema estaba relacionado con la memoria disponible en una instancia `t2.micro`.
+
+El sistema terminaba el proceso antes de que la aplicación pudiera arrancar correctamente.
+
+Esto permitió entender que un fallo aparentemente relacionado con la aplicación puede tener realmente su origen en la infraestructura.
+
+---
+
+## 2. El ciclo de vida del servicio importa
 
 Otro problema encontrado fue que las instancias tardaban varios minutos en apagarse correctamente.
 
-La solución pasó por integrar la aplicación con systemd, permitiendo que Linux gestionase correctamente el ciclo de vida del servicio.
+La integración con **systemd** permitió gestionar de forma más adecuada el ciclo de vida del servicio.
 
 Esto ayudó a entender mejor la relación entre:
 
+```text
 EC2
  │
  ├── Linux
@@ -418,28 +532,38 @@ EC2
  ├── systemd
  │
  └── Application
-3. Docker simplifica la separación entre infraestructura y aplicación
+```
 
-La V2 elimina la necesidad de crear una nueva AMI cada vez que cambia el código de la aplicación.
+---
 
-Ahora:
+## 3. Docker desacopla aplicación e infraestructura
 
-AMI
- │
- └── Sistema operativo + dependencias necesarias
+Uno de los principales cambios de la V2 es eliminar la necesidad de generar nuevas AMIs para cada versión de la aplicación.
 
-mientras que:
+La AMI proporciona:
 
-Docker Image
- │
- └── Aplicación + runtime
+```text
+Sistema operativo
++ herramientas necesarias
+```
 
-Esto permite mantener más desacoplados el ciclo de vida de la infraestructura y el de la aplicación.
+Mientras que la imagen Docker proporciona:
 
-4. CI/CD convierte el proceso en reproducible
+```text
+Aplicación
++ runtime
++ dependencias
+```
 
-El pipeline permite pasar de:
+Esto permite que infraestructura y aplicación evolucionen de manera más independiente.
 
+---
+
+## 4. CI/CD hace el proceso reproducible
+
+La V2 transforma el proceso de:
+
+```text
 Cambio de código
       ↓
 Build manual
@@ -447,25 +571,35 @@ Build manual
 Copiar aplicación
       ↓
 Configurar EC2
+```
 
-a:
+en:
 
+```text
 Git push
    ↓
 GitHub Actions
    ↓
-Docker build
+Build + Tests
    ↓
-ECR
+Docker Build
    ↓
-Infraestructura AWS
+Amazon ECR
+   ↓
+EC2
+   ↓
+Docker Container
+```
 
-La infraestructura deja de depender tanto de pasos manuales.
+Esto acerca el proyecto a un flujo de despliegue más automatizado y reproducible.
 
-📁 Estructura del proyecto
+---
 
-Una estructura posible del proyecto es:
+# 📁 Estructura del proyecto
 
+Una estructura aproximada del repositorio:
+
+```text
 .
 ├── .github/
 │   └── workflows/
@@ -485,165 +619,212 @@ Una estructura posible del proyecto es:
 ├── Dockerfile
 ├── pom.xml
 └── README.md
+```
 
-La estructura exacta puede variar dependiendo de la organización utilizada en el repositorio.
+La estructura exacta puede variar dependiendo de la organización del repositorio.
 
-🚀 Despliegue
-Requisitos
+---
 
-Para desplegar el proyecto es necesario disponer de:
+# 🚀 Despliegue
 
-AWS CLI
-Terraform
-Docker
-Java / Maven
-Una cuenta de AWS
-Una clave SSH para EC2
-Un repositorio de GitHub con GitHub Actions habilitado
-1. Configurar AWS
+## Requisitos
+
+- AWS CLI
+- Terraform
+- Docker
+- Java / Maven
+- Cuenta de AWS
+- Clave SSH para EC2
+- Repositorio de GitHub con GitHub Actions habilitado
+
+---
+
+## 1. Configurar AWS
 
 Configurar las credenciales de AWS mediante el mecanismo habitual de AWS CLI.
 
-Comprobar que las credenciales funcionan:
+Comprobar que funcionan:
 
+```bash
 aws sts get-caller-identity
-2. Configurar variables de Terraform
+```
 
-Crear el fichero correspondiente con las variables necesarias.
+---
+
+## 2. Configurar las variables de Terraform
+
+Configurar las variables necesarias para el entorno.
 
 Por ejemplo:
 
+```hcl
 aws_region     = "us-east-1"
 instance_type  = "..."
 local_ip_range = "..."
+```
 
-Los valores concretos dependerán del entorno donde se quiera desplegar.
+Los valores concretos dependerán del entorno donde se despliegue el proyecto.
 
-3. Inicializar Terraform
+---
+
+## 3. Inicializar Terraform
+
+```bash
 terraform init
-4. Revisar el plan
+```
+
+---
+
+## 4. Revisar el plan
+
+```bash
 terraform plan
+```
 
-Revisar cuidadosamente los recursos que Terraform propone crear.
+Revisar los recursos que Terraform propone crear antes de aplicar los cambios.
 
-5. Aplicar la infraestructura
+---
+
+## 5. Aplicar la infraestructura
+
+```bash
 terraform apply
+```
 
-Terraform creará los recursos necesarios en AWS.
+Terraform creará los recursos definidos en AWS.
 
-🧹 Destruir la infraestructura
+---
 
-Para eliminar los recursos creados:
+# 🧹 Destruir la infraestructura
 
+Para eliminar los recursos:
+
+```bash
 terraform destroy
+```
 
-Importante: el código actual utiliza skip_final_snapshot = true para RDS, por lo que destruir la infraestructura puede eliminar la instancia de base de datos sin conservar un snapshot final.
+> **Importante:** el RDS actual utiliza `skip_final_snapshot = true`. Al destruir la infraestructura, la instancia puede eliminarse sin conservar un snapshot final.
 
-🔒 Consideraciones de seguridad
+---
 
-Este proyecto es principalmente un entorno de aprendizaje y todavía tiene varios puntos que mejoraría antes de considerarlo una arquitectura preparada para producción.
+# 🔒 Consideraciones de seguridad
 
-Por ejemplo, las credenciales de RDS no deberían mantenerse directamente en el código Terraform, como ocurre actualmente con:
+Este proyecto es principalmente un entorno de aprendizaje. Hay varios puntos que deberían mejorarse antes de utilizar esta arquitectura en producción.
 
-password = "arcoiris8"
+### Credenciales de RDS
 
-Una evolución natural sería utilizar:
+Actualmente la contraseña está definida directamente en Terraform:
 
-AWS Secrets Manager
-SSM Parameter Store
-IAM Roles
-GitHub OIDC
-Rotación de credenciales
-HTTPS/TLS en el ALB
-Security Groups más restrictivos
-Subnets privadas para las instancias de aplicación
-NAT Gateway o endpoints VPC cuando sean necesarios
-ECR con políticas adecuadas
-Tags y políticas de ciclo de vida de imágenes
+```hcl
+password = "..."
+```
 
-Estas mejoras quedan fuera del alcance de esta versión, pero forman parte del siguiente paso lógico del proyecto.
+En un entorno real debería utilizarse un sistema de gestión de secretos, por ejemplo:
 
-🔮 Próximos pasos
+- AWS Secrets Manager
+- AWS Systems Manager Parameter Store
 
-Algunas mejoras que podrían incorporarse en futuras versiones:
+### Otras mejoras posibles
 
- HTTPS mediante ACM
- Route 53 + dominio propio
- AWS Secrets Manager para credenciales
- GitHub Actions mediante OIDC en lugar de credenciales estáticas
- Auto Scaling real con max_size > 1
- Migrar EC2 a subnets privadas
- NAT Gateway / VPC Endpoints según necesidades
- ECR lifecycle policies
- CloudWatch Logs y métricas
- Alertas mediante CloudWatch
- Blue/Green o Rolling Deployments
- Versionado/tagging de imágenes Docker
- Separación de entornos dev / staging / prod
- Modularización adicional de Terraform
- Gestión remota del Terraform State mediante S3 + locking
-🎯 Objetivo del proyecto
+- HTTPS mediante AWS Certificate Manager
+- Route 53 + dominio propio
+- GitHub Actions mediante OIDC
+- IAM con mínimo privilegio
+- Subnets privadas para las instancias de aplicación
+- NAT Gateway o VPC Endpoints según necesidades
+- ECR Lifecycle Policies
+- CloudWatch Logs
+- CloudWatch Metrics y alarms
+- Rotación de credenciales
+- Tags y naming conventions más consistentes
+- Terraform State remoto mediante S3 + locking
 
-Más allá de crear una infraestructura funcional, el objetivo principal ha sido entender qué ocurre realmente cuando una aplicación pasa de ejecutarse localmente a ejecutarse en la nube.
+---
 
-La V1 permitió aprender sobre:
+# 🔮 Próximos pasos
 
-VPC
-EC2
-RDS
-Networking
-Security Groups
-IAM
-Auto Scaling
-Load Balancing
-Terraform
+- [ ] HTTPS mediante ACM
+- [ ] Route 53 + dominio propio
+- [ ] AWS Secrets Manager
+- [ ] GitHub Actions mediante OIDC
+- [ ] Auto Scaling real con `max_size > 1`
+- [ ] Migrar EC2 a subnets privadas
+- [ ] NAT Gateway / VPC Endpoints
+- [ ] ECR Lifecycle Policies
+- [ ] CloudWatch Logs
+- [ ] CloudWatch Alarms
+- [ ] Rolling / Blue-Green Deployments
+- [ ] Versionado de imágenes Docker
+- [ ] Entornos `dev` / `staging` / `prod`
+- [ ] Modularización adicional de Terraform
+- [ ] Terraform State remoto
 
-La V2 añade:
+---
 
-Docker
-ECR
-GitHub Actions
-CI/CD
-Containerization
+# 🎯 Objetivo del proyecto
 
-El resultado es una arquitectura donde el proceso completo queda automatizado y definido como código:
+Más allá de crear una infraestructura funcional, el objetivo de este proyecto ha sido entender qué ocurre realmente cuando una aplicación pasa de ejecutarse localmente a ejecutarse en la nube.
 
-                    ┌──────────────┐
-                    │   Developer  │
-                    └──────┬───────┘
-                           │
-                        git push
-                           │
-                           ▼
-                    ┌──────────────┐
-                    │    GitHub    │
-                    │   Actions    │
-                    └──────┬───────┘
-                           │
-                      Docker Build
-                           │
-                           ▼
-                    ┌──────────────┐
-                    │     ECR      │
-                    └──────┬───────┘
-                           │
-                       docker pull
-                           │
-                           ▼
-                    ┌──────────────┐
-                    │     EC2      │
-                    │  AutoScaling │
-                    └──────┬───────┘
-                           │
-                           ▼
-                    ┌──────────────┐
-                    │ Spring Boot  │
-                    │   Docker     │
-                    └──────┬───────┘
-                           │
-                           ▼
-                    ┌──────────────┐
-                    │ RDS Postgres │
-                    └──────────────┘
+La evolución ha sido:
 
-El objetivo de esta V2 no es únicamente desplegar una aplicación, sino construir un pipeline reproducible que conecte desarrollo, build, distribución y ejecución sobre una infraestructura AWS definida completamente mediante código.
+```text
+V1
+│
+├── VPC
+├── EC2
+├── RDS
+├── Networking
+├── Security Groups
+├── IAM
+├── Load Balancer
+├── Auto Scaling
+└── Terraform
+```
+
+↓
+
+```text
+V2
+│
+├── Docker
+├── Amazon ECR
+├── GitHub Actions
+├── CI/CD
+└── Containerization
+```
+
+El resultado es un flujo en el que desarrollo, build, distribución y ejecución están conectados:
+
+```text
+┌─────────────┐
+│   GitHub    │
+└──────┬──────┘
+       │
+       │ push
+       ▼
+┌─────────────┐
+│   Actions   │
+└──────┬──────┘
+       │
+       │ docker build
+       ▼
+┌─────────────┐
+│     ECR     │
+└──────┬──────┘
+       │
+       │ docker pull
+       ▼
+┌─────────────┐
+│ EC2 / ASG   │
+│   Docker    │
+└──────┬──────┘
+       │
+       │ :5432
+       ▼
+┌─────────────┐
+│     RDS     │
+│ PostgreSQL  │
+└─────────────┘
+```
+
+**El objetivo de esta V2 no es únicamente desplegar una aplicación, sino construir un pipeline reproducible que conecte desarrollo, build, distribución y ejecución sobre una infraestructura AWS definida completamente mediante código.**
